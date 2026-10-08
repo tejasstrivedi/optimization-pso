@@ -1,85 +1,49 @@
-# EM618 DT Load Balancing – Streamlit PSO Simulator
+# EM618 DT Load Balancing — revised Streamlit dashboard
 
-## What this demo shows
+The dashboard matches the corrected decision report: **8 DT transfers, 8 same-DT rephasings, 610 m**, with **J = 0.3335541699461108**. The maximum DT and phase loadings are 92.68% and 97.19% respectively.
 
-- Baseline DT and R/Y/B loading
-- Random-key encoding for discrete consumer states
-- Live Particle Swarm Optimization (PSO)
-- Feasible-particle count and convergence history
-- Particle distance to global best
-- DT loading of the current global-best particle
-- Optional deterministic local-search refinement
-- Exact final 6-transfer + 12-rephasing report solution
-- Peak-demand and solar sensitivity demonstration
+## Run locally
 
-## Method terminology
+Use Python 3.12 or later:
 
-- **Course method:** Particle Swarm Optimization (PSO)
-- **Discrete representation:** random-key encoding
-- **Final refinement:** deterministic single-move local search
-
-Random-key encoding is not presented as a separate course algorithm. It is only the
-mapping from continuous PSO positions to the discrete DT/phase choices.
-
-## Files
-
-Place these in the same folder:
-
-- `app.py`
-- `EM618_DT_Load_Balancing_Synthetic_Baseline.xlsx`
-
-The workbook can also be uploaded inside the app.
-
-## Install
-
-Open Command Prompt / PowerShell in this folder:
-
-```bash
+```powershell
 python -m pip install -r requirements.txt
+python -m streamlit run app.py
 ```
 
-## Run
+Keep `app.py`, `EM618_DT_Load_Balancing_Synthetic_Baseline.xlsx` and the complete `report_data/` folder together. Paths resolve beside the script, independently of the launch directory. For Streamlit deployment, select `app.py` as the entry point and install `requirements.txt`.
 
-```bash
-streamlit run app.py
+## Dashboard contents
+
+Six tabs show the baseline, random-key encoding, live PSO, revised report solution, sensitivity checks and verified experiments. The report solution uses the original report settings; sidebar changes affect live experiments. Uploaded data is checked against the bundled dataset before report-specific recommendations are shown.
+
+The experiment archive contains 60 tuning runs (12 configurations × 5 seeds), 20 validation runs, both reference convergence histories and computation metadata. Validation feasibility describes retention from a feasible initialization, rather than unseeded discovery.
+
+## Reproduce the report runs
+
+Leave the illustration-only recommendation warm-start unchecked. The default initialization uses a separately constructed feasible seed, not the final recommendation.
+
+| Preset | Parameters | PSO result | Iterations |
+| --- | --- | --- | --- |
+| Validation run 1004 | 60 particles, inertia 0.9 → 0.4, c1 = c2 = 2 | J = 0.3691700423952783 | 64 |
+| Recommendation origin: run 101 | 60 particles, inertia 0.7, c1 = c2 = 2 | J = 0.3639342845396221 | 45 |
+
+Both use a 200-iteration cap, velocity limit 0.2 and patience 30. Disable local refinement to view the PSO result alone. For the recommendation-origin preset, enable local refinement: nine accepted improvements reproduce the revised recommendation and J = 0.3335541699461108.
+
+Objective normalization stays fixed to the original 90% baseline. Feasibility constraints include loading limits, action caps and prohibited reciprocal DT transfers. Excess-transfer repair removes the longest transfers first. Local search uses the repaired neighbourhood, a 200-pass cap and improvement tolerance 1e-9; PSO uses 1e-10.
+
+## Sensitivity
+
+At uniform +5% peak demand, the fixed recommendation reaches 97.31% maximum DT loading and **102.05% maximum phase loading**, violating the phase limit. Its phase-based uniform growth margin is approximately 2.89%. Interactive sensitivity evaluates the fixed plan. An archived scenario search that found no feasible result is not proof of infeasibility; cap comparisons are best-tested improvements, not exact shadow prices.
+
+## Verify before pushing
+
+```powershell
+python -m unittest discover -s tests -v
+git diff --check
+git status --short
 ```
 
-A browser window should open automatically. If not, copy the local URL printed in the terminal.
+Include `app.py`, this README, `report_data/` and `tests/` in the revised commit, retaining the workbook and requirements already in the repository. Tests check the recommendation, reference PSO runs, local refinement and Streamlit rendering/execution.
 
-## Recommended viva demonstration
-
-1. Open **Baseline** and point out DT-1 / DT-4 overloads and phase overload.
-2. Open **Random-Key Encoding** and choose C0005.
-3. Move the x slider to show how one continuous PSO key maps to a discrete DT/phase state.
-4. Open **Live PSO**.
-5. Use the report-selected settings:
-   - swarm = 60
-   - inertia = 0.9 -> 0.4
-   - c1 = c2 = 2.0
-   - Vmax = 0.20
-   - maximum iterations = 200
-   - early stopping = 30
-6. Click **Run PSO** and explain:
-   - each dot/candidate is one complete network configuration;
-   - pbest = particle's personal best;
-   - gbest = best configuration found by the swarm;
-   - the random-key position is decoded to a feasible consumer state;
-   - hard violations receive a penalty after light repair.
-7. Open **Report Solution** to reproduce the exact 6-transfer / 12-phase-change recommendation.
-8. Open **Sensitivity Demo** and set Peak Import growth to +5% to show why phase headroom is the near-binding issue.
-
-## Important reproducibility note
-
-The **Report Solution** tab recomputes the exact final consumer actions reported in the
-assignment from the workbook.
-
-The **Live PSO** tab is stochastic. Its convergence path and best solution can differ from
-the historical run unless the exact original initialization, repair sequence and random
-number stream are reproduced. This is normal for a metaheuristic and is why the report used
-multiple independent seeds.
-
-## Engineering limitation
-
-This is a synthetic decision-support study, not a load-flow/protection package. Any real
-consumer transfer requires field verification of physical connectivity, conductor capacity,
-voltage drop, protection coordination and service routing.
+This synthetic study supports decisions. Check physical connectivity, conductor capacity, voltage drop, protection and service routing before implementation.

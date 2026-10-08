@@ -1,0 +1,24 @@
+{
+  "selected": [
+    12,
+    60,
+    0.9,
+    0.4,
+    2.0
+  ],
+  "best_start": {
+    "config": 10,
+    "seed": 101,
+    "swarm": 60,
+    "w0": 0.7,
+    "w1": 0.7,
+    "acc": 2.0,
+    "J": 0.3639342845396221,
+    "feasible": true,
+    "iterations": 45,
+    "seconds": 1.8175171999027953
+  },
+  "local_moves": 9,
+  "final_J": 0.3335541699461108,
+  "seed_steps": 12
+}
