@@ -21,7 +21,7 @@ import streamlit as st
 # Final refinement: deterministic single-move local search
 # ============================================================
 
-APP_TITLE = "EM618 – DT Load Balancing PSO Simulator"
+APP_TITLE = "Live PSO Demo"
 DEFAULT_WORKBOOK = "EM618_DT_Load_Balancing_Synthetic_Baseline.xlsx"
 APP_DIR = Path(__file__).resolve().parent
 REPORT_DIR = APP_DIR / "report_data"
@@ -102,12 +102,12 @@ def load_workbook_bytes(raw: bytes):
 
 
 def workbook_source():
-    st.sidebar.subheader("Dataset")
-    uploaded = st.sidebar.file_uploader(
-        "Upload the synthetic baseline workbook",
-        type=["xlsx"],
-        help="Use EM618_DT_Load_Balancing_Synthetic_Baseline.xlsx",
-    )
+    with st.sidebar.expander("Change dataset"):
+        uploaded = st.file_uploader(
+            "Upload the synthetic baseline workbook",
+            type=["xlsx"],
+            help="Use EM618_DT_Load_Balancing_Synthetic_Baseline.xlsx",
+        )
 
     if uploaded is not None:
         return uploaded.getvalue(), uploaded.name
@@ -981,9 +981,9 @@ def main():
         st.exception(exc)
         st.stop()
 
-    st.sidebar.success(f"Loaded: {workbook_name}")
+    st.sidebar.caption(f"Dataset: {len(model.consumers)} consumers · {len(model.dt_names)} transformers")
 
-    preset = st.sidebar.selectbox("Report run preset", ["Validation run 1004", "Recommendation origin: run 101"])
+    preset = st.sidebar.selectbox("Run preset", ["Validation run 1004", "Recommendation origin: run 101"])
     origin_run = preset == "Recommendation origin: run 101"
     with st.sidebar.expander("Advanced settings"):
         swarm_size = st.slider("Swarm size", 10, 100, 60, 10)
@@ -1022,332 +1022,72 @@ def main():
     )
     # Freeze normalization at the original 90% target, as in the revised report.
     refs = baseline_refs(model, EvalConfig())
-    report_dataset = matches_report_dataset(model)
 
-    tabs = st.tabs(
-        [
-            "1. Baseline",
-            "2. Random-Key Encoding",
-            "3. Live PSO",
-            "4. Report Solution",
-            "5. Sensitivity Demo",
-            "6. Verified Experiments",
-        ]
-    )
+    st.write("Watch Particle Swarm Optimization improve transformer and phase loading. "
+             "Click Run PSO to start; lower objective J is better.")
 
-    with tabs[0]:
-        st.subheader("Baseline network")
-        st.write(
-            f"{len(model.consumers)} consumers, {len(model.dt_names)} DTs, "
-            f"{len(model.ctrl_consumers)} consumers with at least one decision alternative."
-        )
+    animate = st.checkbox("Animate during the run", value=True)
+    display_every, delay = 5, 0.0
+    do_local = st.checkbox("Apply local-search refinement after PSO", value=origin_run, key=f"local_{preset}")
+    if origin_run:
+        st.caption("At report defaults: PSO J=0.363934; nine accepted local moves give J=0.333554.")
+    else:
+        st.caption("Figure 2: at report defaults, seed 1004 stops at iteration 64 with J=0.369170. "
+                   "Leave local search off to show this validation result.")
 
-        baseline = np.zeros(len(model.consumers), dtype=int)
-        b_ev = evaluate_batch(baseline, model, cfg, refs)
-        metric_block(b_ev)
-
-        with st.expander('Baseline objective calculation'):
-            st.markdown(
-                rf"""
-        **Baseline normalization references calculated from the workbook**
-
-        - \(F_{{DT,0}} = {refs.f_dt:.4f}\)
-        - \(F_{{phase,0}} = {refs.f_phase:.4f}\)
-        - \(F_{{headroom,0}} = {refs.f_headroom:.4f}\)
-
-        At the original 90% target and equal weights, the baseline has \(J=0.75\):
-        the first three normalized technical terms equal 1 and the change term equals 0.
-        Normalization remains fixed when you change the target or weights. The baseline is nevertheless
-        **infeasible** because DT/phase hard limits are violated.
-        """
+    if st.button("Run PSO", type="primary"):
+        with st.spinner("Running Particle Swarm Optimization..."):
+            result = run_pso(
+                model=model,
+                cfg=cfg,
+                refs=refs,
+                swarm_size=swarm_size,
+                max_iter=max_iter,
+                seed=int(seed),
+                inertia_start=float(inertia_start),
+                inertia_end=float(inertia_end),
+                c1=float(c1),
+                c2=float(c2),
+                vmax=float(vmax),
+                patience=int(patience),
+                animate=animate,
+                display_every=int(display_every),
+                delay=float(delay),
+                use_exact_report_start=False,
             )
 
-        btab = assignment_loading_table(baseline, model, cfg, refs)
-        overview = btab[["DT", "Capacity kVA", "Peak Import %", "High Solar %"]]
-        st.dataframe(overview.round(2), width="stretch", hide_index=True)
-        with st.expander("Phase loading details"):
-            st.dataframe(btab.round(2), width="stretch", hide_index=True)
+        if not bool(evaluate_batch(result["warm_assignment"], model, cfg, refs)["feasible"][0]):
+            st.warning("The bounded initialization did not find a feasible seed under these inputs. "
+                       "The run searched using constraint penalties; check its final feasibility.")
+        pure_assignment = result["assignment"]
+        pure_ev = result["eval"]
 
-    with tabs[1]:
-        st.subheader("How continuous PSO positions become discrete consumer decisions")
-        st.latex(r"k_j = 1 + \left\lfloor u_j |K_j| \right\rfloor")
-        st.write(
-            r"PSO moves a continuous key $u_j\in[0,1)$ . The interval is divided into "
-            r"equal regions, one for each feasible state in consumer $j$'s set $K_j$."
-        )
+        st.info(f"PSO stopped after {result['iterations']} iterations.")
+        if not bool(pure_ev["feasible"][0]):
+            st.warning("No feasible solution was found in this run; these actions are not a recommendation.")
+        st.markdown("### Best pure-PSO solution from this live run")
+        metric_block(pure_ev)
 
-        ids = model.consumers["Consumer_ID"].astype(str).tolist()
-        chosen_id = st.selectbox("Choose a consumer", ids, index=4)
-        i = ids.index(chosen_id)
-        states = model.state_lists[i]
+        final_assignment = pure_assignment
+        final_ev = pure_ev
 
-        demo_df = []
-        k = len(states)
-        for idx, s in enumerate(states):
-            demo_df.append(
-                {
-                    "Discrete state": idx + 1,
-                    "Random-key interval": f"[{idx/k:.3f}, {(idx+1)/k:.3f})",
-                    "DT": s["dt"],
-                    "Phase": s["phase"],
-                    "Transfer?": "Yes" if s["transfer"] else "No",
-                    "Rephase?": "Yes" if s["rephase"] else "No",
-                    "Distance m": s["distance"],
-                }
-            )
-        st.dataframe(pd.DataFrame(demo_df), width="stretch")
-
-        x_demo = st.slider("Try random-key u", 0.0, 0.999, 0.55, 0.001)
-        decoded = min(int(math.floor(x_demo * k)), k - 1)
-        s = states[decoded]
-        st.success(
-            f"u={x_demo:.3f} decodes to State {decoded+1}: {s['dt']} / {s['phase']}"
-        )
-
-    with tabs[2]:
-        st.subheader("Live PSO convergence")
-
-        with st.expander('PSO equations'):
-            st.latex(
-                r"v_{pj}^{t+1}=w(t)v_{pj}^{t}+c_1r_1(pbest_{pj}-u_{pj}^{t})"
-                r"+c_2r_2(gbest_j-u_{pj}^{t})"
-            )
-            st.latex(r"u_{pj}^{t+1}=u_{pj}^{t}+v_{pj}^{t+1}")
-
-        st.info(
-            "Default runs use the independently constructed report seed (initial J=0.408035), "
-            "not the final answer. Validation preset 1004 reproduces Figure 2. To reproduce the "
-            "recommendation, choose the run-101 preset (fixed inertia 0.7) and enable local search. "
-            "Changed data or controls define a new experiment."
-        )
-
-        animate = st.checkbox("Animate during the run", value=True)
-        display_every, delay = 5, 0.0
-        with st.expander('Illustration options'):
-            use_exact_report_start = st.checkbox(
-                "Warm-start from revised recommendation (illustration only)",
-                value=False,
-                help="This seeds PSO with the known answer. It does not reproduce an independent optimization experiment.",
-            )
-        do_local = st.checkbox("Apply local-search refinement after PSO", value=origin_run, key=f"local_{preset}")
-        if use_exact_report_start and not report_dataset:
-            st.warning("The recommendation warm start is available only for the report dataset.")
-        if origin_run:
-            st.caption("At report defaults: PSO J=0.363934; nine accepted local moves give J=0.333554.")
-        else:
-            st.caption("Figure 2: at report defaults, seed 1004 stops at iteration 64 with J=0.369170. "
-                       "Leave local search off to show this validation result.")
-
-        if st.button("Run PSO", type="primary", disabled=use_exact_report_start and not report_dataset):
-            with st.spinner("Running Particle Swarm Optimization..."):
-                result = run_pso(
-                    model=model,
-                    cfg=cfg,
-                    refs=refs,
-                    swarm_size=swarm_size,
-                    max_iter=max_iter,
-                    seed=int(seed),
-                    inertia_start=float(inertia_start),
-                    inertia_end=float(inertia_end),
-                    c1=float(c1),
-                    c2=float(c2),
-                    vmax=float(vmax),
-                    patience=int(patience),
-                    animate=animate,
-                    display_every=int(display_every),
-                    delay=float(delay),
-                    use_exact_report_start=use_exact_report_start,
+        if do_local and bool(pure_ev["feasible"][0]):
+            with st.spinner("Applying deterministic single-move local search..."):
+                final_assignment, final_ev, accepted = local_search(
+                    pure_assignment, model, cfg, refs
                 )
+            st.markdown("### After local-search refinement")
+            st.caption(f"Accepted improving move-and-repair steps: {accepted}")
+            metric_block(final_ev)
 
-            if not bool(evaluate_batch(result["warm_assignment"], model, cfg, refs)["feasible"][0]):
-                st.warning("The bounded initialization did not find a feasible seed under these inputs. "
-                           "The run searched using constraint penalties; check its final feasibility.")
-            pure_assignment = result["assignment"]
-            pure_ev = result["eval"]
+        if not animate:
+            st.line_chart(result["history"].set_index("Iteration")[["Best_J"]], height=300)
 
-            st.info(f"PSO stopped after {result['iterations']} iterations.")
-            if not bool(pure_ev["feasible"][0]):
-                st.warning("No feasible solution was found in this run; these actions are not a recommendation.")
-            st.markdown("### Best pure-PSO solution from this live run")
-            metric_block(pure_ev)
+        st.session_state["last_assignment"] = final_assignment
+        st.session_state["last_history"] = result["history"]
 
-            final_assignment = pure_assignment
-            final_ev = pure_ev
 
-            if do_local and bool(pure_ev["feasible"][0]):
-                with st.spinner("Applying deterministic single-move local search..."):
-                    final_assignment, final_ev, accepted = local_search(
-                        pure_assignment, model, cfg, refs
-                    )
-                st.markdown("### After local-search refinement")
-                st.caption(f"Accepted improving move-and-repair steps: {accepted}")
-                metric_block(final_ev)
-
-            with st.expander('DT and phase loading details'):
-                st.markdown("### Final DT loading from this run")
-                load = assignment_loading_table(final_assignment, model, cfg, refs)
-                st.dataframe(
-                    load.style.format(
-                        {
-                            "Capacity kVA": "{:.0f}",
-                            "Peak Import %": "{:.2f}",
-                            "High Solar %": "{:.2f}",
-                            "Peak R %": "{:.2f}",
-                            "Peak Y %": "{:.2f}",
-                            "Peak B %": "{:.2f}",
-                            "High Solar max phase %": "{:.2f}",
-                        }
-                    ),
-                    width="stretch",
-                )
-
-            with st.expander('Consumer actions from this run'):
-                st.markdown("### Consumer actions")
-                actions = action_table(final_assignment, model)
-                if len(actions):
-                    st.dataframe(
-                        actions.style.format({"Peak kVA": "{:.3f}", "Distance m": "{:.0f}"}),
-                        width="stretch",
-                    )
-                else:
-                    st.write("No changes selected.")
-
-            if not animate:
-                st.line_chart(result["history"].set_index("Iteration")[["Best_J"]], height=300)
-            with st.expander("Convergence data"):
-                st.dataframe(result["history"], width="stretch")
-
-            st.session_state["last_assignment"] = final_assignment
-            st.session_state["last_history"] = result["history"]
-
-    with tabs[3]:
-        st.subheader("Revised report recommendation")
-        st.caption("Report base case: equal weights, 90% soft target, 20 transfers, 25 rephasings, "
-                   "and no reciprocal transfers. Sidebar changes apply to the baseline and live search.")
-        if not report_dataset:
-            st.info("Load the supplied report workbook to reproduce this fixed recommendation. "
-                    "Your uploaded data remain available in Baseline, Encoding and Live PSO.")
-        else:
-            report_cfg = EvalConfig()
-            r_assignment = report_assignment(model)
-            r_ev = evaluate_batch(r_assignment, model, report_cfg, refs)
-            metric_block(r_ev)
-            summary = json.loads((REPORT_DIR / "analysis.json").read_text())
-            expected = summary["recommendation"]
-            actual_values = [float(r_ev["j"][0]), int(r_ev["n_t"][0]), int(r_ev["n_r"][0]),
-                             float(r_ev["distance"][0]), float(r_ev["load_pct"].max()),
-                             float(r_ev["phase_load_pct"].max())]
-            expected_values = [expected["j"], expected["n_t"], expected["n_r"], expected["distance"],
-                               float(np.max(expected["load"])), float(np.max(expected["phase"]))]
-            comparison = pd.DataFrame({
-                "Metric": ["Objective J", "DT transfers", "Same-DT rephasings", "Distance (m)",
-                           "Maximum DT loading (%)", "Maximum phase loading (%)"],
-                "Verified report": expected_values, "Recomputed": actual_values,
-            })
-            with st.expander("Verify against report values"):
-                st.dataframe(comparison.round(6), width="stretch")
-            if bool(r_ev["feasible"][0]) and np.allclose(actual_values, expected_values, rtol=0, atol=1e-8):
-                st.success("The workbook reproduces the revised report recommendation.")
-            else:
-                st.error("The recomputed values do not match the retained report results.")
-            st.write("This tab evaluates the recorded action list; it does not rerun PSO. "
-                     "The revised plan uses 8 transfers, 8 same-DT rephasings and 610 m. "
-                     "Compared with the earlier six-transfer plan, J is 2.26% lower and maximum "
-                     "phase loading falls from 99.45% to 97.19%, with 137 m more transfer distance.")
-            rload = assignment_loading_table(r_assignment, model, report_cfg, refs)
-            with st.expander("Full DT and phase loading"):
-                st.dataframe(rload.round(2), width="stretch")
-            baseline = np.zeros(len(model.consumers), dtype=int)
-            bload = assignment_loading_table(baseline, model, report_cfg, refs)
-            compare = pd.DataFrame({"DT": model.dt_names, "Baseline Peak %": bload["Peak Import %"],
-                                    "Report Solution Peak %": rload["Peak Import %"]})
-            st.markdown("**Peak loading before and after — report Table 6**")
-            st.dataframe(compare.round(2), width="stretch", hide_index=True)
-            with st.expander('The 16 recommended consumer actions'):
-                st.markdown("### Exact 8 transfers and 8 same-DT phase changes")
-                acts = action_table(r_assignment, model)
-                st.dataframe(acts.style.format({"Peak kVA": "{:.3f}", "Distance m": "{:.0f}"}),
-                             width="stretch")
-                st.download_button("Download revised consumer actions", acts.to_csv(index=False),
-                                   "revised_report_actions.csv", "text/csv")
-
-    with tabs[4]:
-        st.subheader("Stress-test the revised action list")
-        st.caption("Electrical loading is recomputed for fixed report actions. This is not re-optimization.")
-        if not report_dataset:
-            st.info("Load the supplied report workbook to test the report recommendation.")
-        else:
-            peak_growth = st.slider("Uniform Peak Import demand growth (%)", 0.0, 15.0, 5.0, 0.5)
-            solar_growth = st.slider("Solar-output growth (%)", 0.0, 50.0, 20.0, 5.0)
-            day_growth = st.slider("Daytime demand growth (%)", 0.0, 20.0, 0.0, 1.0)
-            r_assignment = report_assignment(model)
-            base_ev = evaluate_batch(r_assignment, model, EvalConfig(), refs)
-            changed = consumers.copy()
-            changed["Peak_Import_P_kW"] *= 1 + peak_growth / 100
-            changed["Peak_Import_Q_kVAr"] *= 1 + peak_growth / 100
-            changed["Net_Day_P_kW"] = (changed["Daytime_Load_kW"] * (1 + day_growth / 100)
-                                       - changed["PV_Output_kW"] * (1 + solar_growth / 100))
-            changed["Day_Q_kVAr"] *= 1 + day_growth / 100
-            scenario_model = build_model(changed, dt_master)
-            scenario_ev = evaluate_batch(r_assignment, scenario_model, EvalConfig(), refs)
-            sensitivity_df = pd.DataFrame({
-                "Condition": ["Base Peak Import", f"Peak +{peak_growth:g}%",
-                              f"Day +{day_growth:g}%, solar +{solar_growth:g}%"],
-                "Max DT loading %": [base_ev["load_pct"][0, 0].max(), scenario_ev["load_pct"][0, 0].max(),
-                                     scenario_ev["load_pct"][0, 1].max()],
-                "Max phase loading %": [base_ev["phase_load_pct"][0, 0].max(), scenario_ev["phase_load_pct"][0, 0].max(),
-                                        scenario_ev["phase_load_pct"][0, 1].max()],
-            })
-            st.dataframe(sensitivity_df.round(2), width="stretch", hide_index=True)
-            if bool(scenario_ev["feasible"][0]):
-                st.success("Both changed scenarios satisfy the report's encoded hard limits.")
-            else:
-                st.warning("The fixed report actions violate an electrical limit in the changed scenarios. "
-                           "Revise the plan before treating this as a feasible recommendation.")
-            st.caption("At +5% Peak Import: maximum DT loading is 97.31%, maximum phase loading 102.05%. "
-                       "Base uniform peak-growth margin is approximately 2.89% at the limiting phase.")
-
-    with tabs[5]:
-        st.subheader("Recorded experiments behind the revised report")
-        st.caption("These are saved results for the original report workbook, not the current live run or uploaded data.")
-        tuning = pd.read_csv(REPORT_DIR / "tuning_summary.csv")
-        runs = pd.read_csv(REPORT_DIR / "tuning_runs.csv")
-        design = runs[["config", "swarm", "w0", "w1", "acc"]].drop_duplicates()
-        with st.expander('Tuning details — 60 recorded runs'):
-            st.markdown("### Parameter tuning: 12 configurations, seeds 101–105")
-            st.dataframe(design.merge(tuning, on="config"), width="stretch")
-        st.write("Configuration 12 has the lowest median tuning objective. Configuration 10, seed 101 "
-                 "has the best individual objective across the 80 PSO runs and is the local-refinement start.")
-        validation = pd.read_csv(REPORT_DIR / "validation_runs.csv")
-        with st.expander('Validation details — 20 recorded runs'):
-            st.markdown("### Validation: frozen configuration 12, seeds 1001–1020")
-            st.dataframe(validation, width="stretch")
-        st.caption("All swarms include the same independently constructed feasible seed. "
-                   "20/20 feasible retained bests is not an unseeded feasibility-discovery rate.")
-        history = pd.read_csv(REPORT_DIR / "history_12_1004.csv")
-        with st.expander("Recorded Figure 2 values"):
-            st.dataframe(history[["Iteration", "Best_J"]].round(6), width="stretch")
-        st.caption("Recorded Figure 2 run: seed 1004; best J=0.369170. "
-                   "The recommendation comes from run 101 at fixed inertia 0.7, followed by local search.")
-        with st.expander('Re-optimized sensitivity details'):
-            st.markdown("### Re-optimized sensitivity results")
-            analysis = json.loads((REPORT_DIR / "analysis.json").read_text())
-            scenario_rows = []
-            for row in analysis["sensitivity"]:
-                scenario_rows.append({"Case": row["name"], "Feasible result found": row["found"],
-                                      "DT transfers": int(row["n_t"]) if row["found"] else None,
-                                      "Rephasings": int(row["n_r"]) if row["found"] else None,
-                                      "Changed consumers": row.get("changes_from_recommendation"),
-                                      "Max DT %": float(np.max(row["load"])) if row["found"] else None,
-                                      "Max phase %": float(np.max(row["phase"])) if row["found"] else None})
-            st.dataframe(pd.DataFrame(scenario_rows), width="stretch")
-            st.caption("Scenario searches use two local starting plans and fixed baseline normalization. "
-                       "No feasible result found at +5% demand is not a proof of model infeasibility. "
-                       "Cap comparisons are best-tested improvements, not exact shadow prices.")
-
-    st.divider()
-    st.caption("Synthetic decision-support study. Physical connectivity, conductor capacity, voltage drop, "
-               "protection and service routing must be checked before field implementation.")
+    st.caption("Synthetic 8-transformer, 140-consumer study. Results depend on the selected settings.")
 
 
 if __name__ == "__main__":

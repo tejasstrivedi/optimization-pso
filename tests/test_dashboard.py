@@ -99,11 +99,12 @@ class StreamlitTests(unittest.TestCase):
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(ROOT / 'app.py'), default_timeout=90).run()
         self.assertFalse(at.exception)
-        self.assertEqual(len(at.tabs), 6)
+        self.assertEqual(len(at.tabs), 0)
+        self.assertEqual(len(at.dataframe), 0)
+        self.assertEqual([t.value for t in at.title], ["Live PSO Demo"])
         target = next(s for s in at.sidebar.slider if s.label == 'Preferred DT loading target (%)')
         target.set_value(85).run()
         self.assertFalse(at.exception)
-        self.assertTrue(any('reproduces the revised' in s.value for s in at.success))
         next(s for s in at.sidebar.slider if s.label == 'Preferred DT loading target (%)').set_value(90).run()
         for checkbox in at.checkbox:
             if checkbox.label in ('Animate during the run', 'Apply local-search refinement after PSO'):

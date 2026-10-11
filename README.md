@@ -13,13 +13,9 @@ python -m streamlit run app.py
 
 Keep `app.py`, `EM618_DT_Load_Balancing_Synthetic_Baseline.xlsx` and the complete `report_data/` folder together. Paths resolve beside the script, independently of the launch directory. For Streamlit deployment, select `app.py` as the entry point and install `requirements.txt`.
 
-## Dashboard contents
+## Demo contents
 
-Six tabs show the baseline, random-key encoding, live PSO, report solution, sensitivity checks and verified experiments. The demo uses three headline metrics and compact tables. Only Live PSO draws a chart: best feasible objective against iteration. Advanced settings, equations, objective components, consumer actions and experiment records are expandable. The report solution uses the original report settings; sidebar changes affect live experiments. Uploaded data is checked against the bundled dataset before report-specific recommendations are shown.
-
-Checked against the final report on 11 October 2026: 40 numerical comparisons passed within the report's printed precision, covering baseline and recommended loading, all 16 actions, objective components, fixed-plan and archived re-optimized sensitivity results, tuning and validation summaries, and every recorded Figure 2 objective. The raw mean validation stopping count is 54.95, shown as 55.0 to one decimal in the report.
-
-The experiment archive contains 60 tuning runs (12 configurations × 5 seeds), 20 validation runs, both reference convergence histories and computation metadata. Validation feasibility describes retention from a feasible initialization, rather than unseeded discovery.
+The page shows Live PSO only: a Run PSO button, a single live convergence chart and a compact result summary. Run presets and expandable advanced settings control the experiment. Local-search refinement is optional. Baseline, encoding, report-solution, sensitivity and experiment-archive pages are no longer displayed. Saved computation data remain available to support reproducibility and automated checks.
 
 ## Reproduce the report runs
 
@@ -36,7 +32,7 @@ Objective normalization stays fixed to the original 90% baseline. Feasibility co
 
 ## Sensitivity
 
-At uniform +5% peak demand, the fixed recommendation reaches 97.31% maximum DT loading and **102.05% maximum phase loading**, violating the phase limit. Its phase-based uniform growth margin is approximately 2.89%. Interactive sensitivity evaluates the fixed plan. An archived scenario search that found no feasible result is not proof of infeasibility; cap comparisons are best-tested improvements, not exact shadow prices.
+At uniform +5% peak demand, the fixed recommendation reaches 97.31% maximum DT loading and **102.05% maximum phase loading**, violating the phase limit. Its phase-based uniform growth margin is approximately 2.89%. The verification tests evaluate the fixed plan. An archived scenario search that found no feasible result is not proof of infeasibility; cap comparisons are best-tested improvements, not exact shadow prices.
 
 ## Verify before pushing
 
