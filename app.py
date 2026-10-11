@@ -983,7 +983,7 @@ def main():
 
     st.sidebar.caption(f"Dataset: {len(model.consumers)} consumers · {len(model.dt_names)} transformers")
 
-    preset = st.sidebar.selectbox("Run preset", ["Validation run 1004", "Recommendation origin: run 101"])
+    preset = st.sidebar.selectbox("Run preset", ["Recommendation origin: run 101", "Validation run 1004"], key="run_preset_recommendation_default")
     origin_run = preset == "Recommendation origin: run 101"
     with st.sidebar.expander("Advanced settings"):
         swarm_size = st.slider("Swarm size", 10, 100, 60, 10)

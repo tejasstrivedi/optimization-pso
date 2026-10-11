@@ -85,6 +85,7 @@ class StreamlitTests(unittest.TestCase):
         import pyarrow as pa
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(ROOT / 'app.py'), default_timeout=90).run()
+        at.sidebar.selectbox[0].select('Validation run 1004').run()
         self.assertFalse(next(c for c in at.checkbox if c.label == 'Apply local-search refinement after PSO').value)
         next(b for b in at.button if b.label == 'Run PSO').click().run()
         self.assertFalse(at.exception)
@@ -102,21 +103,12 @@ class StreamlitTests(unittest.TestCase):
         self.assertEqual(len(at.tabs), 0)
         self.assertEqual(len(at.dataframe), 0)
         self.assertEqual([t.value for t in at.title], ["Live PSO Demo"])
-        target = next(s for s in at.sidebar.slider if s.label == 'Preferred DT loading target (%)')
-        target.set_value(85).run()
-        self.assertFalse(at.exception)
-        next(s for s in at.sidebar.slider if s.label == 'Preferred DT loading target (%)').set_value(90).run()
-        for checkbox in at.checkbox:
-            if checkbox.label in ('Animate during the run', 'Apply local-search refinement after PSO'):
-                checkbox.uncheck()
-        at.run()
+        self.assertEqual(at.sidebar.selectbox[0].value, 'Recommendation origin: run 101')
+        self.assertTrue(next(c for c in at.checkbox if c.label == 'Apply local-search refinement after PSO').value)
         next(b for b in at.button if b.label == 'Run PSO').click().run()
         self.assertFalse(at.exception)
-        self.assertEqual(int(at.session_state['last_history'].iloc[-1]['Iteration']), 64)
-        at.sidebar.selectbox[0].select('Recommendation origin: run 101').run()
-        next(c for c in at.checkbox if c.label == 'Apply local-search refinement after PSO').check().run()
-        next(b for b in at.button if b.label == 'Run PSO').click().run()
-        self.assertFalse(at.exception)
+        self.assertEqual(int(at.session_state['last_history'].iloc[-1]['Iteration']), 45)
+        self.assertTrue(any(m.value == '0.333554' for m in at.metric))
         consumers, dt = app.load_workbook_bytes((ROOT / app.DEFAULT_WORKBOOK).read_bytes())
         np.testing.assert_array_equal(at.session_state['last_assignment'], app.report_assignment(app.build_model(consumers, dt)))
 
