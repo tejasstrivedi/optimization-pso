@@ -1026,6 +1026,22 @@ def main():
     st.write("Watch Particle Swarm Optimization improve transformer and phase loading. "
              "Click Run PSO to start; lower objective J is better.")
 
+    baseline_assignment = np.zeros(len(model.consumers), dtype=int)
+    baseline_ev = evaluate_batch(baseline_assignment, model, cfg, refs)
+    st.subheader("Before optimization — original connections")
+    st.caption("Every consumer remains on the DT and phase recorded in the workbook. "
+               "These are the original network conditions, before any transfers or rephasings; "
+               "PSO's constructed starting seed is a separate plan.")
+    metric_block(baseline_ev)
+    if not bool(baseline_ev["feasible"][0]):
+        st.warning("The original network exceeds the loading limits. "
+                   "PSO searches for a plan within the 100% DT and phase limits.")
+    st.caption("Loading as a percentage of capacity. Peak Import and High Solar are both evaluated; "
+               "the summary maxima above cover both scenarios. Values above 100% are overloaded.")
+    st.dataframe(assignment_loading_table(baseline_assignment, model, cfg, refs).round(2),
+                 hide_index=True, width="stretch")
+
+    st.subheader("Run optimization")
     animate = st.checkbox("Animate during the run", value=True)
     display_every, delay = 5, 0.0
     do_local = st.checkbox("Apply local-search refinement after PSO", value=origin_run, key=f"local_{preset}")
@@ -1082,6 +1098,28 @@ def main():
 
         if not animate:
             st.line_chart(result["history"].set_index("Iteration")[["Best_J"]], height=300)
+
+        st.subheader("Before and after optimization")
+        st.caption("After uses this run's final result, including local-search refinement when enabled. "
+                   "A lower objective alone does not establish feasibility; check the result status above.")
+        st.dataframe(pd.DataFrame({
+            "Measure": ["Objective J", "Max DT loading (%)", "Max phase loading (%)", "Feasible"],
+            "Before": [f"{baseline_ev['j'][0]:.6f}",
+                       f"{baseline_ev['load_pct'][0].max():.2f}",
+                       f"{baseline_ev['phase_load_pct'][0].max():.2f}",
+                       "Yes" if baseline_ev['feasible'][0] else "No"],
+            "After": [f"{final_ev['j'][0]:.6f}",
+                      f"{final_ev['load_pct'][0].max():.2f}",
+                      f"{final_ev['phase_load_pct'][0].max():.2f}",
+                      "Yes" if final_ev['feasible'][0] else "No"],
+        }), hide_index=True, width="stretch")
+        comparison = pd.DataFrame({"DT": model.dt_names})
+        for scenario, label in enumerate(("Peak Import", "High Solar")):
+            comparison[f"{label} before %"] = baseline_ev["load_pct"][0, scenario]
+            comparison[f"{label} after %"] = final_ev["load_pct"][0, scenario]
+            comparison[f"{label} max phase before %"] = baseline_ev["phase_load_pct"][0, scenario].max(axis=1)
+            comparison[f"{label} max phase after %"] = final_ev["phase_load_pct"][0, scenario].max(axis=1)
+        st.dataframe(comparison.round(2), hide_index=True, width="stretch")
 
         st.session_state["last_assignment"] = final_assignment
         st.session_state["last_history"] = result["history"]

@@ -15,7 +15,7 @@ Keep `app.py`, `EM618_DT_Load_Balancing_Synthetic_Baseline.xlsx` and the complet
 
 ## Demo contents
 
-The page shows Live PSO only: a Run PSO button, a single live convergence chart and a compact result summary. The default is recommendation-origin run 101 with local-search refinement enabled: click Run PSO to reproduce the report final plan (J = 0.333554, 8 transfers, 8 rephasings, 610 m). The validation run remains an optional preset. Expandable advanced settings control custom experiments. Baseline, encoding, report-solution, sensitivity and experiment-archive pages are no longer displayed. Saved computation data remain available to support reproducibility and automated checks.
+The page opens with the before-optimization scenario: original workbook connections, objective and loading metrics, feasibility, and per-transformer loading for Peak Import and High Solar. A Run PSO button starts the live convergence chart and result summary. After the run, comparison tables show the original and final objective, feasibility, DT loading and maximum phase loading for both scenarios. The original baseline is distinct from the constructed feasible PSO seed. The default is recommendation-origin run 101 with local-search refinement enabled: click Run PSO to reproduce the report final plan (J = 0.333554, 8 transfers, 8 rephasings, 610 m). The validation run remains an optional preset. Expandable advanced settings control custom experiments. Encoding, report-solution, sensitivity and experiment-archive pages are no longer displayed. Saved computation data remain available to support reproducibility and automated checks.
 
 ## Reproduce the report runs
 
